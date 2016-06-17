@@ -680,24 +680,6 @@ def test_reset():
     assert rdr.peek() == ''
 
 
-def test_reset_with_delimiter():
-    """Test ReadLines reset with a specified delimiter."""
-    fobj = io.StringIO('abc~def~ghi!j')
-    rdr = ReadLines(fobj, delimiter='~')
-    assert next(rdr) == 'abc~'
-    assert next(rdr) == 'def~'
-    rdr.reset('!')
-    assert next(rdr) == 'abc~def~ghi!'
-    assert next(rdr) == 'j'
-    assert fobj.seek(2) == 2
-    rdr = ReadLines(fobj, delimiter='~')
-    assert next(rdr) == 'c~'
-    assert next(rdr) == 'def~'
-    rdr.reset('!')
-    assert next(rdr) == 'c~def~ghi!'
-    assert next(rdr) == 'j'
-
-
 def test_with_delimiter():
     """Test ReadLines direct delimmiter override."""
     fobj = io.StringIO('abc~def~ghi!j')
@@ -757,30 +739,7 @@ def test_errors_delimiter_init():
         next(rdr)
 
 
-def test_errors_delimiter_reset():
-    """Test ReadLines reset with an invalid delimiter."""
-    fobj = io.StringIO('abc~def~ghi!j')
-    rdr = ReadLines(fobj, delimiter='~')
-    assert next(rdr) == 'abc~'
-    assert next(rdr) == 'def~'
-    rdr.reset(1)
-    with pytest.raises(AttributeError):
-        next(rdr)
-    rdr.reset(b'~')
-    with pytest.raises(TypeError):
-        next(rdr)
-    rdr.reset(re.compile(b'~'))
-    with pytest.raises(TypeError):
-        next(rdr)
-    rdr.reset('~')
-    assert next(rdr) == 'abc~'
-    rdr.reset(1)
-    with pytest.raises(AttributeError):
-        rdr.peek()
-    assert rdr.peek(1) == 'a'
-
-
-def test_errors_delimiter_direct():
+def test_errors_delimiter():
     """Test ReadLines direct delimiter override with an invalid delimiter."""
     fobj = io.StringIO('abc~def~ghi!j')
     rdr = ReadLines(fobj, delimiter='~')
@@ -795,7 +754,8 @@ def test_errors_delimiter_direct():
     rdr.delimiter = re.compile(b'~') # pylint: disable=redefined-variable-type
     with pytest.raises(TypeError):
         next(rdr)
-    rdr.reset('~')
+    rdr.reset()
+    rdr.delimiter = '~'
     assert next(rdr) == 'abc~'
     rdr.delimiter = 1
     with pytest.raises(AttributeError):

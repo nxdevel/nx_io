@@ -6,21 +6,21 @@ import pathlib
 __all__ = ['open_file']
 
 
-def open_file(file_name, mode='rt', **kwargs):
+def open_file(file_name, *args, **kwargs):
     """Open a file.
 
     Arguments
     ---------
     file_name : str, bytes, pathlib, fspath
-    mode      : str
-                The mode in which the file is opened
+    args      : variable
     kwargs    : variable
-                The keyword arguments are the same as open() and are passed
-                directly to it
 
     Returns
     -------
     A stream object
+
+    The positional and keyword arguments are the same as those used by
+    io.open() and are passed directly to it.
 
     Originally intended to combine open() and pathlib's open() method, PEP 519
     suggests open() will be updated to additionally handle objects implementing
@@ -33,6 +33,5 @@ def open_file(file_name, mode='rt', **kwargs):
         elif hasattr(file_name, '__fspath__'):
             file_name = file_name.__fspath__()
         else:
-            raise TypeError('unknown file name type: {}'
-                            .format(file_name.__class__.__name__))
-    return io.open(file_name, mode=mode, **kwargs)
+            raise TypeError('invalid file: {}'.format(repr(file_name)))
+    return io.open(file_name, *args, **kwargs)
