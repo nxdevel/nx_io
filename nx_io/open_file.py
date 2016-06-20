@@ -1,4 +1,5 @@
-"Open function supporting different path specifications"
+# -*- coding: utf-8 -*-
+"""Open function supporting different path specifications"""
 import io
 import pathlib
 
@@ -7,11 +8,12 @@ __all__ = ['open_file']
 
 
 def open_file(file_name, *args, **kwargs):
-    """Open a file.
+    """Open a file
 
     Arguments
     ---------
-    file_name : str, bytes, pathlib, fspath
+    file_name : str, bytes, pathlib, or fspath
+                The file to open
     args      : variable
     kwargs    : variable
 
