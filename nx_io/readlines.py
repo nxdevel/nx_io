@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Object to read lines from a stream using an arbitrary delimiter"""
 import math
+from itertools import filterfalse
 from unicodedata import combining, normalize
 
 
@@ -37,11 +38,10 @@ class _Reader:
         amount requested with a blank returned for EOF.
 
         Due to the handling of combining characters, when a normalization form
-        is specified, the return for reads from a text-mode stream, that has
-        enough data to fulfill the requested size, will always have an extra
-        character added to after the first read. Depending on the disposition
-        of the stream, it is possible that the results could contain the entire
-        contents of stream regardless of how much data was requested.
+        is specified, the return for reads from a text-mode stream may have
+        more data than requested. Depending on the disposition of the stream,
+        it is possible that the results could contain the entire contents of
+        the stream regardless of how much data was requested.
         """
         fobj_read = self._fobj.read
         form = self._form
@@ -50,36 +50,42 @@ class _Reader:
         if form is None or isinstance(buf, bytes):
             return buf
 
-        # one extra character is read to determine if the read boundaray
-        # contains a combining character
-        extra = fobj_read(1)
-
-        # add the previous extra character to the read
+        # add the previous extra data to the buffer
         buf = self._prev_extra + buf
 
-        # if the extra character is blank, meaning EOF, or it is not combining
-        # then there is no need for further reads
-        while extra and combining(extra):
-            # the extra character is combining which means the stream needs to
-            # be scanned for a read boundary that does not contain a combining
-            # character
+        # retrieve extra data to ensure the boundary does not split combined
+        # characters
+        extra = fobj_read(512)
 
-            # the extra character is combining so it is added to the buffer
+        while extra:
+
+            # find the first occurrence of a non-combing character in the extra
+            # data
+            result = next(filterfalse(lambda x: combining(x[1]),
+                                      enumerate(extra)), None)
+
+            if result is not None:
+                # a non-combining character was found in the extra data
+                idx = result[0]
+
+                # add all of the extra data upto the non-combining character
+                # to the buffer
+                buf += extra[:idx]
+
+                # store all of the extra data from the non-combining character
+                # on so it will be added to the buffer on the next read
+                self._prev_extra = extra[idx:]
+
+                break
+
+            # if there is no occurrence of a non-combining character in the
+            # extra data then add the extra data to the buffer and try again
             buf += extra
+            extra = fobj_read(512)
 
-            # reading one character at a time is slow but there is a small
-            # chance of hitting a combining boundary consistently if the
-            # stream is read in blocks
-
-            # streams that contain a large number of sequential combining
-            # characters will be retrieved slower but, except for cases where
-            # the stream contains nothing but combining chracters, the entire
-            # contents of the stream will not be read into the buffer
-            extra = fobj_read(1)
-
-        # save the just-read extra character so it can can be added to the
-        # next read
-        self._prev_extra = extra
+        else:
+            self._prev_extra = ''       # no extra data was read or it was
+                                        # already added to the buffer
 
         return normalize(form, buf)
 
@@ -414,6 +420,7 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         self._fobj = fobj
         self.strip_delimiter = strip_delimiter
         self._block_size = block_size
+        #buf = fobj.read(block_size)
         buf = fobj.read(1)
         self._buf, self._idx, self._eof = buf, 0, not buf
         if isinstance(buf, bytes):
