@@ -284,6 +284,15 @@ def test_greedy_regex_bin_strip():
                           block_size=1)
 
 
+def test_bin_normalization():
+    """Test normalization on binary data"""
+    # normalization is ignored for binary data
+    run_fixed_tests(b'~', b'~', form='NFC')
+    run_fixed_tests(b'~', b'~', form='NFKC')
+    run_fixed_tests(b'~', b'~', form='NFD')
+    run_fixed_tests(b'~', b'~', form='NFKD')
+
+
 def peek_tests(**kwargs):
     """Peek tests"""
     fobj = io.StringIO('abc~def~ghi~jkl~')
@@ -916,3 +925,27 @@ def test_forms_strip():
     """Test form normalization with delimiters stripped"""
     form_tests_strip()
     form_tests_strip(block_size=1)
+
+
+def test_combining_scan():
+    """Test the combining character scanning of streams"""
+    # inducing the scanner to execute multiple reads
+    fobj = io.StringIO('a\n\u0308')
+    with mock.patch('nx_io.readlines.SCAN_SIZE', return_value=1):
+        rdr = ReadLines(fobj, form='NFC', block_size=1)
+        assert isinstance(rdr, Iterator)
+        assert list(rdr) == ['a\n', '\u0308']
+
+    # inducing the scanner to read extra data but not enough to satisfy
+    # a subsequent read
+    fobj = io.StringIO('abc\n\u0308')
+    with mock.patch('nx_io.readlines.SCAN_SIZE', return_value=1):
+        rdr = ReadLines(fobj, form='NFC', block_size=3)
+        assert isinstance(rdr, Iterator)
+        assert list(rdr) == ['abc\n', '\u0308']
+
+
+def test_form_errors():
+    """Test normalization form errors"""
+    with pytest.raises(ValueError):
+        ReadLines(io.StringIO(''), form='nfc')
