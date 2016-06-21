@@ -51,7 +51,7 @@ class _Reader:
         """
         form = self._form
         if form is None:
-            # no form means a direct read
+            # no normalization form means a direct read
             return self._fobj.read(size)
 
         fobj_read = self._fobj.read
@@ -68,8 +68,10 @@ class _Reader:
         else:
             buf = fobj_read(size)
 
-        if isinstance(buf, bytes):
-            return buf
+            if isinstance(buf, bytes):
+                if form is not None:
+                    raise ValueError('normalization not supported on binary '
+                                     'streams')
 
         scan_size = SCAN_SIZE
 
@@ -123,9 +125,9 @@ class _Reader:
         If form is specified then the returned data is normalized with that
         form.
         """
-        self._fobj = fobj
         if form not in {'NFC', 'NFKC', 'NFD', 'NFKD', None}:
             raise ValueError('invalid normalization form')
+        self._fobj = fobj
         self._form = form
         self._start = fobj.tell() if fobj.seekable() else None
         self._prev_extra = ''

@@ -284,15 +284,6 @@ def test_greedy_regex_bin_strip():
                           block_size=1)
 
 
-def test_bin_normalization():
-    """Test normalization on binary data"""
-    # normalization is ignored for binary data
-    run_fixed_tests(b'~', b'~', form='NFC')
-    run_fixed_tests(b'~', b'~', form='NFKC')
-    run_fixed_tests(b'~', b'~', form='NFD')
-    run_fixed_tests(b'~', b'~', form='NFKD')
-
-
 def peek_tests(**kwargs):
     """Peek tests"""
     fobj = io.StringIO('abc~def~ghi~jkl~')
@@ -919,6 +910,22 @@ def form_tests_strip(**kwargs):
                     **kwargs)
     assert isinstance(rdr, Iterator)
     assert list(rdr) == ['bc', '~abc']
+
+
+def test_bin_normalization():
+    """Test normalization on binary data"""
+    # normalization is ignored for binary data
+    with pytest.raises(ValueError):
+        ReadLines(io.BytesIO(b''), form='NFC')
+
+    with pytest.raises(ValueError):
+        ReadLines(io.BytesIO(b''), form='NFKC')
+
+    with pytest.raises(ValueError):
+        ReadLines(io.BytesIO(b''), form='NFD')
+
+    with pytest.raises(ValueError):
+        ReadLines(io.BytesIO(b''), form='NFKD')
 
 
 def test_forms_strip():
