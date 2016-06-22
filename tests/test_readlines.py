@@ -339,55 +339,6 @@ def test_peek_strip():
     peek_tests_strip(block_size=1)
 
 
-def test_reset():
-    """Test reset"""
-    fobj = io.StringIO('abc~def~g')
-    rdr = ReadLines(fobj, delimiter='~')
-    assert isinstance(rdr, Iterator)
-    assert next(rdr) == 'abc~'
-    assert next(rdr) == 'def~'
-    rdr.reset()
-    assert next(rdr) == 'abc~'
-    assert next(rdr) == 'def~'
-
-    assert fobj.seek(2) == 2
-    rdr = ReadLines(fobj, delimiter='~')
-    assert isinstance(rdr, Iterator)
-    assert next(rdr) == 'c~'
-    assert next(rdr) == 'def~'
-    rdr.reset()
-    assert next(rdr) == 'c~'
-    assert next(rdr) == 'def~'
-
-    fobj = io.StringIO('')
-    rdr = ReadLines(fobj, delimiter='~')
-    assert isinstance(rdr, Iterator)
-    assert rdr.peek() == ''
-    rdr.reset()
-    assert rdr.peek() == ''
-
-
-def test_reset_strip():
-    """Test reset with stripped delimiters"""
-    fobj = io.StringIO('abc~def~g')
-    rdr = ReadLines(fobj, delimiter='~', strip_delimiter=True)
-    assert isinstance(rdr, Iterator)
-    assert next(rdr) == 'abc'
-    assert next(rdr) == 'def'
-    rdr.reset()
-    assert next(rdr) == 'abc'
-    assert next(rdr) == 'def'
-
-    assert fobj.seek(2) == 2
-    rdr = ReadLines(fobj, delimiter='~', strip_delimiter=True)
-    assert isinstance(rdr, Iterator)
-    assert next(rdr) == 'c'
-    assert next(rdr) == 'def'
-    rdr.reset()
-    assert next(rdr) == 'c'
-    assert next(rdr) == 'def'
-
-
 def delimiter_tests(**kwargs):
     """Delimiter override tests"""
     fobj = io.StringIO('abc~def~gh~i!j')
@@ -472,8 +423,8 @@ def test_peek_error():
         assert rdr.peek(-1)
 
 
-def test_errors_delimiter_init():
-    """Test initialization with an invalid delimiter"""
+def test_errors_delimiter_init_text():
+    """Test initialization with an invalid delimiter for a text stream"""
     fobj = io.StringIO('')
     with pytest.raises(ValueError):
         ReadLines(fobj, delimiter='')
@@ -494,7 +445,9 @@ def test_errors_delimiter_init():
     with pytest.raises(ValueError):
         ReadLines(fobj, delimiter=re.compile(b'~*'))
 
-    fobj = io.BytesIO(b'')   # pylint: disable=redefined-variable-type
+def test_errors_delimiter_init_bin():
+    """Test initialization with an invalid delimiter for a binary stream"""
+    fobj = io.BytesIO(b'')
     with pytest.raises(ValueError):
         ReadLines(fobj, delimiter='')
     with pytest.raises(ValueError):
@@ -515,8 +468,8 @@ def test_errors_delimiter_init():
         ReadLines(fobj, delimiter=re.compile(b'~*'))
 
 
-def test_errors_delimiter():
-    """Test delimiter override with an invalid delimiter"""
+def test_errors_delimiter_text():
+    """Test delimiter override with an invalid delimiter for a text stream"""
     fobj = io.StringIO('abc~def~ghi!j')
     rdr = ReadLines(fobj, delimiter='~')
     assert isinstance(rdr, Iterator)
@@ -543,7 +496,9 @@ def test_errors_delimiter():
     rdr.delimiter = '!'
     assert next(rdr) == 'ghi!'
 
-    fobj = io.BytesIO(b'abc~def~ghi!j') # pylint: disable=redefined-variable-type
+def test_errors_delimiter_bin():
+    """Test delimiter override with an invalid delimiter for a binary stream"""
+    fobj = io.BytesIO(b'abc~def~ghi!j')
     rdr = ReadLines(fobj, delimiter=b'~')
     assert isinstance(rdr, Iterator)
     assert next(rdr) == b'abc~'
@@ -551,7 +506,7 @@ def test_errors_delimiter():
     with pytest.raises(ValueError):
         rdr.delimiter = ''
     with pytest.raises(ValueError):
-        rdr.delimiter = b''
+        rdr.delimiter = b''  # pylint: disable=redefined-variable-type
     with pytest.raises(ValueError):
         rdr.delimiter = '~'
     with pytest.raises(ValueError):
@@ -568,16 +523,6 @@ def test_errors_delimiter():
         rdr.delimiter = re.compile(b'~*')
     rdr.delimiter = b'!'
     assert next(rdr) == b'ghi!'
-
-
-def test_errors_seek():
-    """Test seek with a stream that does not support it"""
-    fobj = io.StringIO('abc~def~ghi!j')
-    with mock.patch.object(fobj, 'seekable', return_value=False):
-        rdr = ReadLines(fobj, delimiter='~')
-        assert isinstance(rdr, Iterator)
-        with pytest.raises(ValueError):
-            rdr.reset()
 
 
 def form_tests(**kwargs):

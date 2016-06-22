@@ -16,17 +16,8 @@ DEFAULT_BLOCK_SIZE = 1048756
 SCAN_SIZE = 512
 
 
-class _Reader:
+class _Reader:                # pylint: disable=too-few-public-methods
     """Stream reader that accounts for combining characters"""
-    def reset(self):
-        """Reset to the initialized state"""
-        start = self._start
-        if start is None:
-            raise ValueError('reset on non-seekable steam object')
-        fobj = self._fobj
-        fobj.seek(start)
-        self.__init__(fobj, form=self._form)
-
     def read(self, size):
         """Read data
 
@@ -129,7 +120,6 @@ class _Reader:
             raise ValueError('invalid normalization form')
         self._fobj = fobj
         self._form = form
-        self._start = fobj.tell() if fobj.seekable() else None
         self._prev_extra = ''
 
 
@@ -140,14 +130,6 @@ class StreamExhausted(Exception): # pylint: disable=too-few-public-methods
 
 class ReadLines:        # pylint: disable=too-many-instance-attributes
     """Iterator to read lines from a stream using an arbitrary delimiter"""
-    def reset(self):
-        """Reset to the initialized state"""
-        fobj = self._fobj
-        fobj.reset()
-        self.__init__(fobj, delimiter=self.delimiter, form=None,
-                      strip_delimiter=self.strip_delimiter,
-                      block_size=self._block_size)
-
     def peek(self, size=None):
         """Peek into the stream/buffer without advancing the current read
         state
