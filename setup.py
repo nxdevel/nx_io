@@ -1,13 +1,13 @@
 import pathlib
+import importlib
 from setuptools import setup, find_packages
 
 name = 'nx_io'
 description = 'Miscellaneous I/O utilities'
 
-here = pathlib.Path(__file__).resolve().parent
-with (here / name / 'version.txt').open() as fp:
-    version = fp.read().strip()
+version = importlib.import_module(name).version
 
+here = pathlib.Path(__file__).resolve().parent
 with (here / 'README.rst').open() as fp:
     long_description = fp.read()
 

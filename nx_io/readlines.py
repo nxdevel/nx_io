@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """Object to read lines from a stream using an arbitrary delimiter"""
-import math
-from itertools import filterfalse
-from unicodedata import combining, normalize
+from  math import ceil
 
 
 __all__ = ['ReadLines']
@@ -12,127 +10,15 @@ __all__ = ['ReadLines']
 DEFAULT_BLOCK_SIZE = 1048756
 
 
-# the size to read when scanning for a non-combining character
-SCAN_SIZE = 512
-
-
-class _Reader:                # pylint: disable=too-few-public-methods
-    """Stream reader that accounts for combining characters"""
-    def read(self, size):
-        """Read data
-
-        Arguments
-        ---------
-        size : integer
-               The amount of data to read
-
-        Returns
-        -------
-        The data read from the stream
-
-        As with any stream, the length of the return may be less than the
-        amount requested with a blank returned for EOF.
-
-        Due to the nature and handling of combining characters, when a
-        normalization form is specified, the return for reads from a text-mode
-        stream may have more or less data than requested. Depending on the
-        disposition of the stream, it is possible that the results could
-        contain the entire contents of the stream regardless of how much data
-        was requested.
-        """
-        form = self._form
-        if form is None:
-            # no normalization form means a direct read
-            return self._fobj.read(size)
-
-        fobj_read = self._fobj.read
-
-        prev_extra = self._prev_extra
-        if prev_extra:
-            # include the previous extra data with the buffer
-            buf = prev_extra
-            buf_length = len(buf)
-            if buf_length < size:
-                # only execute a read if the previous extra data cannot
-                # satisify the request
-                buf += fobj_read(size - buf_length)
-        else:
-            buf = fobj_read(size)
-
-            if isinstance(buf, bytes):
-                if form is not None:
-                    raise ValueError('normalization not supported on binary '
-                                     'streams')
-
-        scan_size = SCAN_SIZE
-
-        # retrieve extra data to ensure the boundary does not split combined
-        # characters
-        extra = fobj_read(scan_size)
-
-        while extra:
-
-            # find the first occurrence of a non-combing character in the extra
-            # data
-            result = next(filterfalse(lambda x: combining(x[1]),
-                                      enumerate(extra)), None)
-
-            if result is not None:
-                # a non-combining character was found in the extra data
-                idx = result[0]
-
-                # add all of the extra data upto the non-combining character
-                # to the buffer
-                buf += extra[:idx]
-
-                # store all of the extra data from the non-combining character
-                # on so it will be added to the buffer on the next read
-                self._prev_extra = extra[idx:]
-
-                break
-
-            # if there is no occurrence of a non-combining character in the
-            # extra data then add the extra data to the buffer and try again
-            buf += extra
-            extra = fobj_read(scan_size)
-
-        else:
-            self._prev_extra = ''       # no extra data was read or it was
-                                        # already added to the buffer
-
-        return normalize(form, buf)
-
-    def __init__(self, fobj, form=None):
-        """
-        Arguments
-        ---------
-        fobj      : stream
-                    The stream from which to read
-        form      : string
-                    The normalization form to use
-
-        The stream must be opened for reading and must be in blocking mode.
-
-        If form is specified then the returned data is normalized with that
-        form.
-        """
-        if form not in {'NFC', 'NFKC', 'NFD', 'NFKD', None}:
-            raise ValueError('invalid normalization form')
-        self._fobj = fobj
-        self._form = form
-        self._prev_extra = ''
-
-
 class StreamExhausted(Exception): # pylint: disable=too-few-public-methods
-    """Exception indicating the stream has been exhausted of lines"""
+    """Exception indicating the stream has been exhausted of data"""
     pass
 
 
 class ReadLines:        # pylint: disable=too-many-instance-attributes
     """Iterator to read lines from a stream using an arbitrary delimiter"""
     def peek(self, size=None):
-        """Peek into the stream/buffer without advancing the current read
-        state
+        """Peek into the stream/buffer without advancing the current state
 
         Arguments
         ---------
@@ -159,36 +45,40 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         if size == 0:
             return ''
 
-        # truncate the buffer
-        buf, eof = self._buf[self._idx:], self._eof
+        buf, idx = self._buf, self._idx
 
-        fobj_read = self._fobj.read
-        block_size = self._block_size
+        if not self._eof and len(buf) - idx < size:
+            # the stream is not known to be exhausted and the buffer will not
+            # satisfy the request
 
-        # determine if more data is needed to satisfy the request
-        extra_needed = size - len(buf)
+            fobj_read = self._fobj.read
+            block_size = self._block_size
 
-        # while the steam has not been exhausted and more data is needed...
-        while not eof and extra_needed:
+            # truncate the buffer
+            buf, idx = buf[idx:], 0
 
-            # determine how much data to read(in multiples of the block
-            # size) in order to satisfy the request
-            to_read = math.ceil(extra_needed / block_size) * block_size
+            amount_needed = size - len(buf)
 
-            tmp_buf = fobj_read(to_read)
-            if tmp_buf:
+            while amount_needed > 0:
+
+                # determine how much data to read(in multiples of the block
+                # size) in order to satisfy the request
+                to_read = ceil(amount_needed / block_size) * block_size
+
+                data = fobj_read(to_read)
+                if not data:
+                    self._eof = True
+                    break
+
                 # more data has been received so it is added to the buffer
-                buf += tmp_buf
+                buf += data
 
-                # determine if the read has satisfied the request
-                extra_needed = size - len(buf)
+                amount_needed = max(size - len(buf), 0)
 
-            else:
-                self._eof = eof = True # no data has been received so EOF
+            # buffer was modified
+            self._buf, self._idx = buf, idx
 
-        # buffer was truncated
-        self._buf, self._idx = buf, 0
-        return buf[:size]
+        return buf[idx:idx + size]
 
     def __iter__(self):
         return self
@@ -216,34 +106,28 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         lines available and there are no more lines to be read.
         """
         line = self._line
-        if line is not None:
-            # a cached line is available
+        if line is not None:            # a cached line is available
+
             delimiter_pos = self._delimiter_pos
 
             if consume:
                 # if consume is True then ensure that the next call will get
                 # the next line
-                self._line, self._delimiter_pos = None, None
+                self._line = None
 
-            if self.strip_delimiter:
-                return line[:delimiter_pos]
-            return line
-
-        # get the next line from the buffer/stream
-        line, delimiter_pos = self._get_next_line()
-
-        if consume:
-            # if consume is True then this line will not be cached
-            self._line, self._delimiter_pos = None, None
         else:
-            # cache the line
-            self._line, self._delimiter_pos = line, delimiter_pos
+            # get the next line from the buffer/stream
+            line, delimiter_pos = self._get_next_line()
+
+            if not consume:
+                # cache the line
+                self._line, self._delimiter_pos = line, delimiter_pos
 
         if self.strip_delimiter:
             return line[:delimiter_pos]
         return line
 
-    def _get_next_line(self):           # pylint: disable=too-many-branches
+    def _get_next_line(self):
         """Get the next line
 
         Returns
@@ -356,13 +240,13 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
 
     @property
     def delimiter(self):
-        """Delimiter getter"""
+        """Get delimiter"""
         return self._delimiter
     _delimiter = None
 
     @delimiter.setter
     def delimiter(self, value):
-        """Delimiter setter"""
+        """Set delimiter"""
         if isinstance(value, (str, bytes)):
             if not value:
                 raise ValueError('non-zero match delimiter is required')
@@ -381,8 +265,8 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
                              .format(repr(value)))
         self._delimiter = value
 
-    def __init__(self, fobj, *, delimiter='\n', form=None,
-                 strip_delimiter=False, block_size=DEFAULT_BLOCK_SIZE):
+    def __init__(self, fobj, *, delimiter='\n', strip_delimiter=False,
+                 block_size=DEFAULT_BLOCK_SIZE):
         """
         Arguments
         ----------
@@ -390,8 +274,6 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
                           Stream from which to read
         delimiter       : str, bytes, or regex
                           Criteria for how a line is terminated
-        form            : str
-                          The normalizion form to use
         strip_delimiter : boolean
                           Indicator on whether the delimiter should be included
                           in a returned line
@@ -406,9 +288,7 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
                           Indicator on whether the delimiter should be included
                           in a returned line
 
-        The stream must be opened for reading and must be in blocking mode.
-
-        If form is specified then that form is used for all lines.
+        The stream must be opened for reading and must be blocking.
 
         The *delimiter* type should match the mode of *fobj*. If *delimiter* is
         str/bytes then the find() method of the internal buffer will be used.
@@ -416,8 +296,6 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
 
         The *delimiter* should match one or more characters.
         """
-        if not isinstance(fobj, _Reader):
-            fobj = _Reader(fobj, form)
         buf = fobj.read(block_size)
         if isinstance(buf, bytes):
             self._binary = True
@@ -426,8 +304,8 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
             self._binary = False
             self._empty_buf = '' # pylint: disable=redefined-variable-type
         self._fobj = fobj
+        self.delimiter = delimiter
         self.strip_delimiter = strip_delimiter
         self._block_size = block_size
-        self.delimiter = delimiter
         self._buf, self._idx, self._eof = buf, 0, not buf
         self._line, self._delimiter_pos = None, None
