@@ -18,18 +18,17 @@ class File519:                # pylint: disable=too-few-public-methods
 
 
 @contextlib.contextmanager
-def make_file(data, convert=lambda x: x):
+def make_file(data):
     """Context manager to create a file containing *data* and delete it
 
     NamedTemporaryFile with delete=True won't work as it cannot be portably
     opened as a regular file.
     """
     (fileno, file_name) = tempfile.mkstemp()
-    with open(fileno, 'wt' if isinstance(data, str) else 'wb',
-              encoding='utf-8') as fobj:
+    with open(fileno, 'wt') as fobj:
         fobj.write(data)
     try:
-        yield convert(file_name)
+        yield file_name
     finally:
         os.unlink(file_name)
 
@@ -37,7 +36,7 @@ def make_file(data, convert=lambda x: x):
 def test_file_name_str():
     """Test open_file with a string file name"""
     data = 'abc'
-    with make_file(data, str) as file_name:
+    with make_file(data) as file_name:
         fobj = open_file(file_name, encoding='utf-8')
         assert fobj.read() == data
         fobj.close()
@@ -46,8 +45,8 @@ def test_file_name_str():
 def test_file_name_bin():
     """Test open_file with a bytes file name"""
     data = 'abc'
-    with make_file(data, lambda x: x.encode()) as file_name:
-        fobj = open_file(file_name, encoding='utf-8')
+    with make_file(data) as file_name:
+        fobj = open_file(file_name.encode('utf-8'), encoding='utf-8')
         assert fobj.read() == data
         fobj.close()
 
@@ -55,8 +54,8 @@ def test_file_name_bin():
 def test_file_name_path():
     """Test open_file with a pathlib file name"""
     data = 'abc'
-    with make_file(data, pathlib.Path) as file_name:
-        fobj = open_file(file_name, encoding='utf-8')
+    with make_file(data) as file_name:
+        fobj = open_file(pathlib.Path(file_name), encoding='utf-8')
         assert fobj.read() == data
         fobj.close()
 
@@ -64,8 +63,8 @@ def test_file_name_path():
 def test_file_name_519():
     """Test open_file with a PEP 519 file name"""
     data = 'abc'
-    with make_file(data, File519) as file_name:
-        fobj = open_file(file_name, encoding='utf-8')
+    with make_file(data) as file_name:
+        fobj = open_file(File519(file_name), encoding='utf-8')
         assert fobj.read() == data
         fobj.close()
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Object to read lines from a stream using an arbitrary delimiter"""
-from  math import ceil
+from math import ceil
+from collections import namedtuple
 
 
 __all__ = ['ReadLines']
@@ -10,12 +11,13 @@ __all__ = ['ReadLines']
 DEFAULT_BLOCK_SIZE = 1048756
 
 
-class StreamExhausted(Exception): # pylint: disable=too-few-public-methods
-    """Exception indicating the stream has been exhausted of data"""
-    pass
+Stream = namedtuple('Stream', ('read', 'block_size'))
 
 
-class ReadLines:        # pylint: disable=too-many-instance-attributes
+Buffer = namedtuple('Buffer', ('buf', 'idx', 'eof'))
+
+
+class ReadLines:
     """Iterator to read lines from a stream using an arbitrary delimiter"""
     def peek(self, size=None):
         """Peek into the stream/buffer without advancing the current state
@@ -36,58 +38,51 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         if size is None:                # request to peek at a line
             try:
                 return self._get_line(consume=False)
-            except StreamExhausted:
+            except StopIteration:
                 return ''
 
-        if size < 0:
-            raise ValueError('invalid size: {}'.format(size))
+        if size >= 0:
+            buf, idx, eof = self._buffer
 
-        if size == 0:
-            return ''
+            if not eof and len(buf) - idx < size:
+                # the stream is not known to be exhausted and the buffer will
+                # not satisfy the request
 
-        buf, idx = self._buf, self._idx
+                read, block_size = self._stream
 
-        if not self._eof and len(buf) - idx < size:
-            # the stream is not known to be exhausted and the buffer will not
-            # satisfy the request
+                # truncate the buffer
+                buf, idx = buf[idx:], 0
 
-            fobj_read = self._fobj.read
-            block_size = self._block_size
+                amount_needed = size - len(buf)
 
-            # truncate the buffer
-            buf, idx = buf[idx:], 0
+                while amount_needed > 0:
 
-            amount_needed = size - len(buf)
+                    # determine how much data to read(in multiples of the block
+                    # size) in order to satisfy the request
+                    to_read = ceil(amount_needed / block_size) * block_size
 
-            while amount_needed > 0:
+                    data = read(to_read)
+                    if not data:
+                        eof = True
+                        break
 
-                # determine how much data to read(in multiples of the block
-                # size) in order to satisfy the request
-                to_read = ceil(amount_needed / block_size) * block_size
+                    # more data has been received so it is added to the buffer
+                    buf += data
 
-                data = fobj_read(to_read)
-                if not data:
-                    self._eof = True
-                    break
+                    amount_needed = max(size - len(buf), 0)
 
-                # more data has been received so it is added to the buffer
-                buf += data
+                # buffer was modified
+                self._buffer = Buffer(buf, idx, eof)
 
-                amount_needed = max(size - len(buf), 0)
+            return buf[idx:idx + size]
 
-            # buffer was modified
-            self._buf, self._idx = buf, idx
-
-        return buf[idx:idx + size]
+        raise ValueError('invalid size: {}'.format(size))
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        try:
-            return self._get_line(consume=True)
-        except StreamExhausted:
-            raise StopIteration
+        return self._get_line(consume=True)
 
     def _get_line(self, consume):
         """Get the next/cached line
@@ -107,25 +102,18 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         """
         line = self._line
         if line is not None:            # a cached line is available
-
-            delimiter_pos = self._delimiter_pos
-
             if consume:
                 # if consume is True then ensure that the next call will get
                 # the next line
                 self._line = None
+            return line[:self._delimiter_pos] if self.strip_delimiter else line
 
-        else:
-            # get the next line from the buffer/stream
-            line, delimiter_pos = self._get_next_line()
-
-            if not consume:
-                # cache the line
-                self._line, self._delimiter_pos = line, delimiter_pos
-
-        if self.strip_delimiter:
-            return line[:delimiter_pos]
-        return line
+        # get the next line from the buffer/stream
+        line, delimiter_pos = self._get_next_line()
+        if not consume:
+            # cache the line
+            self._line, self._delimiter_pos = line, delimiter_pos
+        return line[:delimiter_pos] if self.strip_delimiter else line
 
     def _get_next_line(self):
         """Get the next line
@@ -139,10 +127,9 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         This call will raise a StreamExhausted exception if there are no more
         lines to be read.
         """
-        fobj_read = self._fobj.read
-        block_size = self._block_size
-        delimiter = self.delimiter
-        buf, idx, eof = self._buf, self._idx, self._eof
+        read, block_size = self._stream
+        buf, idx, eof = self._buffer
+        delimiter = self._delimiter
 
         # searching starts at the idx
         search_idx = idx
@@ -158,7 +145,8 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
                     # delimiter starts to get the index of where it ends and
                     # the index attribute is set to indicate where in the
                     # buffer the next line begins
-                    self._idx = end = delimiter_start + len(delimiter)
+                    end = delimiter_start + len(delimiter)
+                    self._buffer = Buffer(buf, end, eof)
                     return buf[idx:end], delimiter_start - idx
 
                 # a match was not found but if the delimiter is more than one
@@ -181,7 +169,7 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
 
                         # the index attribute is set to indicate where in the
                         # buffer the next line begins
-                        self._idx = end
+                        self._buffer = Buffer(buf, end, eof)
                         return buf[idx:end], delimiter_start - idx
 
                     # if the match is at the end of the buffer then reading
@@ -203,9 +191,8 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
             if eof:                     # no more data is forth-coming
                 # ensure that another call will result in no search being
                 # performed
-                self._buf, self._idx = self._empty_buf, 0
-
                 end = len(buf)
+                self._buffer = Buffer(buf[end:], 0, eof)
                 if idx < end:
                     # there is unconsumed data in the buffer
 
@@ -218,7 +205,7 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
 
                     return buf[idx:end], delimiter_start - idx
 
-                raise StreamExhausted
+                raise StopIteration
 
             # truncate the buffer
             buf, idx = buf[idx:], 0
@@ -232,11 +219,10 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
                 search_idx = 0
 
             # get more data
-            more = fobj_read(block_size)
+            more = read(block_size)
             buf += more
-            self._buf = buf
             if not more:
-                self._eof = eof = True
+                eof = True
 
     @property
     def delimiter(self):
@@ -250,10 +236,10 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
         if isinstance(value, (str, bytes)):
             if not value:
                 raise ValueError('non-zero match delimiter is required')
-            if isinstance(value, bytes) != self._binary:
+            if isinstance(value, bytes) != isinstance(self._buffer.buf, bytes):
                 raise ValueError('delimiter type must match stream mode')
         elif hasattr(value, 'search'):
-            test_text = b'test' if self._binary else 'test'
+            test_text = b'' if isinstance(self._buffer.buf, bytes) else ''
             try:
                 result = value.search(test_text)
             except TypeError:
@@ -296,16 +282,10 @@ class ReadLines:        # pylint: disable=too-many-instance-attributes
 
         The *delimiter* should match one or more characters.
         """
-        buf = fobj.read(block_size)
-        if isinstance(buf, bytes):
-            self._binary = True
-            self._empty_buf = b''
-        else:
-            self._binary = False
-            self._empty_buf = '' # pylint: disable=redefined-variable-type
-        self._fobj = fobj
+        read = fobj.read
+        buf = read(block_size)
+        self._stream = Stream(read, block_size)
+        self._buffer = Buffer(buf, 0, not buf)
         self.delimiter = delimiter
         self.strip_delimiter = strip_delimiter
-        self._block_size = block_size
-        self._buf, self._idx, self._eof = buf, 0, not buf
         self._line, self._delimiter_pos = None, None

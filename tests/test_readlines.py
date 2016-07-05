@@ -30,12 +30,14 @@ def run_fixed_tests(delimiter_txt, delimiter=None, eats_run=False, **kwargs):
     fobj = fobj_ctor(char_ctor('a'))
     rdr = get_instance(fobj, delimiter, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == [char_ctor('a')]
 
     # test with just the delimiter as data
     fobj = fobj_ctor(delimiter_txt)
     rdr = get_instance(fobj, delimiter, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == [delimiter_txt]
 
     # test with delimiter and text where there is no delimiter at neither end
@@ -50,6 +52,7 @@ def run_fixed_tests(delimiter_txt, delimiter=None, eats_run=False, **kwargs):
     fobj = fobj_ctor(base_str)
     rdr = get_instance(fobj, delimiter, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == expected
 
     # test with delimiter and text where the delimiter is at both ends
@@ -59,12 +62,14 @@ def run_fixed_tests(delimiter_txt, delimiter=None, eats_run=False, **kwargs):
     fobj = fobj_ctor(base_str)
     rdr = get_instance(fobj, delimiter, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == expected
 
     # test with no data
     fobj = fobj_ctor(char_ctor(''))
     rdr = get_instance(fobj, delimiter, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == []
 
 
@@ -78,12 +83,14 @@ def run_fixed_tests_strip(delimiter_txt, delimiter=None, eats_run=False,
     fobj = fobj_ctor(char_ctor('a'))
     rdr = get_instance(fobj, delimiter, strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == [char_ctor('a')]
 
     # test with just the delimiter as data
     fobj = fobj_ctor(delimiter_txt)
     rdr = get_instance(fobj, delimiter, strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == [char_ctor('')]
 
     # test with delimiter and text where there is no delimiter at neither end
@@ -97,6 +104,7 @@ def run_fixed_tests_strip(delimiter_txt, delimiter=None, eats_run=False,
     fobj = fobj_ctor(base_str)
     rdr = get_instance(fobj, delimiter, strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == expected
 
     # test with delimiter and text where the delimiter is at both ends
@@ -105,12 +113,14 @@ def run_fixed_tests_strip(delimiter_txt, delimiter=None, eats_run=False,
     fobj = fobj_ctor(base_str)
     rdr = get_instance(fobj, delimiter, strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == expected
 
     # test with no data
     fobj = fobj_ctor(char_ctor(''))
     rdr = get_instance(fobj, delimiter, strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert delimiter is None or rdr.delimiter is delimiter
     assert list(rdr) == []
 
 
@@ -287,6 +297,7 @@ def peek_tests(**kwargs):
     fobj = io.StringIO('abc~def~ghi~jkl')
     rdr = ReadLines(fobj, delimiter='~', **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc~'
     assert rdr.peek(0) == ''
     assert rdr.peek(2) == 'de'
@@ -303,6 +314,7 @@ def peek_tests(**kwargs):
     fobj = io.StringIO('')
     rdr = ReadLines(fobj, delimiter='~', **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert rdr.peek(0) == ''
     assert rdr.peek(2) == ''
     assert rdr.peek() == ''
@@ -319,6 +331,7 @@ def peek_tests_strip(**kwargs):
     fobj = io.StringIO('abc~def~ghi~jkl~')
     rdr = ReadLines(fobj, delimiter='~', strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc'
     assert rdr.peek(0) == ''
     assert rdr.peek(2) == 'de'
@@ -343,26 +356,55 @@ def delimiter_tests(**kwargs):
     fobj = io.StringIO('abc~def~gh~i!j')
     rdr = ReadLines(fobj, delimiter='~', **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc~'
     assert next(rdr) == 'def~'
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
+    assert next(rdr) == 'gh~i!'
+    assert next(rdr) == 'j'
+
+    assert fobj.seek(0) == 0
+    rdr = ReadLines(fobj, delimiter='~', **kwargs)
+    assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
+    assert next(rdr) == 'abc~'
+    assert next(rdr) == 'def~'
+    delimiter = re.compile('!')
+    rdr.delimiter = delimiter
+    assert rdr.delimiter is delimiter
     assert next(rdr) == 'gh~i!'
     assert next(rdr) == 'j'
 
     assert fobj.seek(2) == 2
     rdr = ReadLines(fobj, delimiter='~', **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'c~'
     assert next(rdr) == 'def~'
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
+    assert next(rdr) == 'gh~i!'
+    assert next(rdr) == 'j'
+
+    assert fobj.seek(2) == 2
+    rdr = ReadLines(fobj, delimiter='~', **kwargs)
+    assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
+    assert next(rdr) == 'c~'
+    assert next(rdr) == 'def~'
+    rdr.delimiter = delimiter
+    assert rdr.delimiter is delimiter
     assert next(rdr) == 'gh~i!'
     assert next(rdr) == 'j'
 
     fobj = io.StringIO('')
     rdr = ReadLines(fobj, delimiter='~', **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert rdr.peek() == ''
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
     assert rdr.peek() == ''
 
 
@@ -377,18 +419,22 @@ def delimiter_tests_strip(**kwargs):
     fobj = io.StringIO('abc~def~gh~i!j')
     rdr = ReadLines(fobj, delimiter='~', strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc'
     assert next(rdr) == 'def'
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
     assert next(rdr) == 'gh~i'
     assert next(rdr) == 'j'
 
     assert fobj.seek(2) == 2
     rdr = ReadLines(fobj, delimiter='~', strip_delimiter=True, **kwargs)
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'c'
     assert next(rdr) == 'def'
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
     assert next(rdr) == 'gh~i'
     assert next(rdr) == 'j'
 
@@ -404,6 +450,7 @@ def test_strip_change():
     fobj = io.StringIO('abc~def~')
     rdr = ReadLines(fobj, delimiter='~')
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert rdr.peek() == 'abc~'
     rdr.strip_delimiter = True
     assert rdr.peek() == 'abc'
@@ -417,6 +464,7 @@ def test_peek_error():
     fobj = io.StringIO('abc~def~g')
     rdr = ReadLines(fobj, delimiter='~')
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc~'
     with pytest.raises(ValueError):
         assert rdr.peek(-1)
@@ -472,27 +520,38 @@ def test_errors_delimiter_text():
     fobj = io.StringIO('abc~def~ghi!j')
     rdr = ReadLines(fobj, delimiter='~')
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == '~'
     assert next(rdr) == 'abc~'
     assert next(rdr) == 'def~'
     with pytest.raises(ValueError):
         rdr.delimiter = ''
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = b''  # pylint: disable=redefined-variable-type
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = b'~'
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = 1
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile('')
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile(b'')
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile('~*')
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile(b'~')
+    assert rdr.delimiter == '~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile(b'~*')
+    assert rdr.delimiter == '~'
     rdr.delimiter = '!'
+    assert rdr.delimiter == '!'
     assert next(rdr) == 'ghi!'
 
 def test_errors_delimiter_bin():
@@ -500,25 +559,36 @@ def test_errors_delimiter_bin():
     fobj = io.BytesIO(b'abc~def~ghi!j')
     rdr = ReadLines(fobj, delimiter=b'~')
     assert isinstance(rdr, Iterator)
+    assert rdr.delimiter == b'~'
     assert next(rdr) == b'abc~'
     assert next(rdr) == b'def~'
     with pytest.raises(ValueError):
         rdr.delimiter = ''
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = b''  # pylint: disable=redefined-variable-type
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = '~'
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = 1
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile('')
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile(b'')
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile('~*')
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile('~')
+    assert rdr.delimiter == b'~'
     with pytest.raises(ValueError):
         rdr.delimiter = re.compile(b'~*')
+    assert rdr.delimiter == b'~'
     rdr.delimiter = b'!'
+    assert rdr.delimiter == b'!'
     assert next(rdr) == b'ghi!'
