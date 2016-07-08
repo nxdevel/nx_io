@@ -6,7 +6,7 @@ from math import ceil
 __all__ = ['ReadLines']
 
 
-# the default amount of data to read on a buffer full
+# the default amount of data to read on a buffer fill
 DEFAULT_BLOCK_SIZE = 1048756
 
 
@@ -25,12 +25,12 @@ class ReadLines:              # pylint: disable=too-few-public-methods
         If size is specified then the returned amount is the same as if the
         stream were being peek()'ed directly, i.e. the amount will include upto
         the amount requested depending on how much data there is. If size is
-        omitted or None, the forth-coming delimited line will be returned.
+        omitted or None, the next delimited line will be returned but it will
+        not be consumed.
         """
         if size is None:                # request to peek at a line
             try:
-                line, delimiter_pos = self._get_line(consume=False)
-                return line[:delimiter_pos] if self.strip_delimiter else line
+                return self.__next__(consume=False)
             except StopIteration:
                 return ''
 
@@ -38,8 +38,8 @@ class ReadLines:              # pylint: disable=too-few-public-methods
         idx = self._idx
 
         if not self._eof and len(buf) - idx < size:
-            # the stream is not known to be exhausted and the buffer will not
-            # satisfy the request
+            # the stream is not known to be exhausted and the existing buffer
+            # will not satisfy the request
 
             read = self._read
             block_size = self._block_size
@@ -71,11 +71,8 @@ class ReadLines:              # pylint: disable=too-few-public-methods
     def __iter__(self):
         return self
 
-    def __next__(self):
-        line, delimiter_pos = self._get_line(consume=True)
-        return line[:delimiter_pos] if self.strip_delimiter else line
-
-    def _get_line(self, consume):  # pylint: disable=too-many-branches
+    # pylint: disable=too-many-branches,too-many-locals
+    def __next__(self, consume=True):
         """Get the next line
 
         Arguments
@@ -85,44 +82,40 @@ class ReadLines:              # pylint: disable=too-few-public-methods
 
         Returns
         -------
-        A two-tuple of the next line in the stream and the index of where,
-        within the line, the delimiter starts if it is present or the length of
-        the line if it does not.
-
-        This call will raise a StreamExhausted exception if there are no more
-        lines to be read.
+        The next line in the stream
         """
+        buf = self._buf
+        eof = self._eof
+        delimiter = self.delimiter
         read = self._read
         block_size = self._block_size
-        buf, idx, eof = self._buf, self._idx, self._eof
-        delimiter = self.delimiter
 
         # searching starts at the idx
-        search_idx = idx
+        search_idx = idx = self._idx
+
+        delimiter_is_fixed = isinstance(delimiter, (str, bytes))
+        if delimiter_is_fixed:
+            delimiter_length = len(delimiter)
+            # if a match is not found then the buffer is expanded and another
+            # search is performed starting with the new data
+            # if the delimiter has multiple characters then the possibility
+            # exists that the delimiter has been split between reads so an
+            # offset is used to start the search within the buffer that was
+            # already searched
+            search_offset = delimiter_length - 1
+        elif not hasattr(delimiter, 'search'):
+            raise TypeError('invalid delimiter type: {}'
+                            .format(delimiter.__class__))
 
         while True:
-
-            # The delimiter is either str/bytes or a regex-like object
-            if isinstance(delimiter, (str, bytes)):
+            if delimiter_is_fixed:
                 delimiter_start = buf.find(delimiter, search_idx)
 
                 if delimiter_start != -1:
                     # the length of the delimiter is added to where the
                     # delimiter starts to get the index of where it ends
-                    end = delimiter_start + len(delimiter)
-                    if consume:
-                        # the index attribute is set to indicate where in the
-                        # buffer the next line begins
-                        self._buf, self._idx, self._eof = buf, end, eof
-                    else:
-                        self._buf, self._idx, self._eof = buf, idx, eof
-                    return buf[idx:end], delimiter_start - idx
-
-                # a match was not found but if the delimiter is more than one
-                # character then the delimiter could have been split so an
-                # offset is provided to start the search within the existing
-                # buffer
-                search_offset = len(delimiter) - 1
+                    end = delimiter_start + delimiter_length
+                    break
 
             else:
                 result = delimiter.search(buf, # pylint: disable=no-member
@@ -134,24 +127,15 @@ class ReadLines:              # pylint: disable=too-few-public-methods
                     if end != result.endpos:
                         # if the match is not at the end of the buffer then it
                         # is treated as an exact match
-
-                        if consume:
-                            # the index attribute is set to indicate where in
-                            # the buffer the next line begins
-                            self._buf, self._idx, self._eof = buf, end, eof
-                        else:
-                            self._buf, self._idx, self._eof = buf, idx, eof
-                        return buf[idx:end], delimiter_start - idx
+                        break
 
                     # if the match is at the end of the buffer then reading
                     # more could result in a better match
-
                     # since a match was found, searching can begin at the point
                     # where the match started
                     search_offset = end - delimiter_start
 
                 else:
-
                     # the delimiter was not found in the buffer
                     delimiter_start = -1
 
@@ -161,15 +145,8 @@ class ReadLines:              # pylint: disable=too-few-public-methods
             if eof:                     # no more data is forth-coming
                 end = len(buf)
 
-                if consume:
-                    # ensure that another call will result in no search being
-                    # performed
-                    self._buf, self._idx, self._eof = buf[end:], 0, True
-                else:
-                    self._buf, self._idx, self._eof = buf, idx, True
-
                 if idx < end:
-                    # there is unconsumed data in the buffer
+                    # there is data in the buffer to return
 
                     # it is possible that a match exists but an attempt is
                     # being made to find a better match
@@ -178,26 +155,34 @@ class ReadLines:              # pylint: disable=too-few-public-methods
                         # final line contains no delimiter
                         delimiter_start = end
 
-                    return buf[idx:end], delimiter_start - idx
+                    break
 
                 raise StopIteration
 
             # truncate the buffer
-            buf, idx = buf[idx:], 0
+            buf = buf[idx:]
+            idx = 0
 
-            # search should commence at the where the buffer ends minus any
-            # offset that was previously provided
-            search_idx = len(buf) - search_offset
-
-            if search_idx < 0:
-                # ensure the search index does not start on a negative value
-                search_idx = 0
+            # searching should commence with the new data that will be added
+            # to the buffer minus any offset that was previously provided
+            search_idx = max(len(buf) - search_offset, 0)
 
             # get more data
             more = read(block_size)
             if not more:
-                eof = True
+                self._eof = eof = True
             buf += more
+            self._buf = buf
+
+        # set the _idx attribute to the end of the line being returned if it is
+        # being consumed otherwise set it to the local idx, which may have been
+        # updated if data was added to the buffer
+        self._idx = end if consume else idx
+
+        if self.strip_delimiter:
+            return buf[idx:delimiter_start]
+        return buf[idx:end]
+    # pylint: enable=too-many-branches,too-many-locals
 
     def __init__(self, fobj, *, delimiter='\n', strip_delimiter=False,
                  block_size=DEFAULT_BLOCK_SIZE):
@@ -241,4 +226,6 @@ class ReadLines:              # pylint: disable=too-few-public-methods
         self.strip_delimiter = strip_delimiter
         self._block_size = block_size
         buf = fobj.read(block_size)
-        self._buf, self._idx, self._eof = buf, 0, not buf
+        self._buf = buf
+        self._idx = 0
+        self._eof = not buf
