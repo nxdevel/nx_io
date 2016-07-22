@@ -10,7 +10,7 @@ __all__ = ['ReadLines']
 DEFAULT_BLOCK_SIZE = 1048756
 
 
-class ReadLines:              # pylint: disable=too-few-public-methods
+class ReadLines: # pylint: disable=too-few-public-methods, too-many-instance-attributes
     """Iterator to read lines from a stream using an arbitrary delimiter"""
     def peek(self, size=None):
         """Peek into the stream/buffer without advancing the current state
@@ -48,6 +48,7 @@ class ReadLines:              # pylint: disable=too-few-public-methods
             buf = buf[idx:]
             self._idx = idx = 0
 
+            chunks = []
             amount_needed = size - len(buf)
 
             while amount_needed > 0:
@@ -58,12 +59,10 @@ class ReadLines:              # pylint: disable=too-few-public-methods
                     self._eof = True
                     break
 
-                # more data has been received so it is added to the buffer
-                buf += data
+                chunks.append(data)
+                amount_needed = max(amount_needed - len(data), 0)
 
-                amount_needed = max(size - len(buf), 0)
-
-            # buffer was modified
+            buf += self._empty.join(chunks)
             self._buf = buf
 
         return buf[idx:idx + size]
@@ -226,6 +225,7 @@ class ReadLines:              # pylint: disable=too-few-public-methods
         self.strip_delimiter = strip_delimiter
         self._block_size = block_size
         buf = fobj.read(block_size)
+        self._empty = b'' if isinstance(buf, bytes) else ''
         self._buf = buf
         self._idx = 0
         self._eof = not buf
